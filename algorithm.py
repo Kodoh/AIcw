@@ -23,11 +23,9 @@ class node:
         return self.fDiff
     def calculateS(self):
         self.s = 0
-        for i in range(1,n+1):
-            if i == 0:
-                self.s += weights[(0,self.id)]   
-            elif (i,self.id) in weights:
-                self.s += weights[(i,self.id)] * nodes[i-1].getU()
+        for i in range(1,n+1): 
+            self.s += weights[(i,self.id)] * nodes[i-1].getU()
+        self.s += weights[(0,self.id)]
         return self.s
     def getDelta(self):
         return self.delta
@@ -53,11 +51,9 @@ class outputNode(node):
     
     def calculateS(self):
         self.s = 0
-        for i in range(n+1,len(nodes)+1):
-            if i == 0:
-                self.s += weights[(0,self.id)]   
-            elif (i,self.id) in weights:
-                self.s += weights[(i,self.id)] * nodes[i-1].getU()
+        for i in range(n+1,len(nodes)):
+            self.s += weights[(i,self.id)] * nodes[i-1].getU()
+        self.s += weights[0,self.id]        
         return self.s
 
 class inputNode(node):
