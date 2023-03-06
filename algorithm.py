@@ -21,9 +21,9 @@ class node:
         return self.id
     def getfDiff(self):
         return self.fDiff
-    def calculateS(self,weights):
+    def calculateS(self):
         self.s = 0
-        for i in range(self.id):
+        for i in range(1,n+1):
             if i == 0:
                 self.s += weights[(0,self.id)]   
             elif (i,self.id) in weights:
@@ -31,8 +31,8 @@ class node:
         return self.s
     def getDelta(self):
         return self.delta
-    def calculateU(self,weights):
-        self.u = 1/(1+(e**(-1*self.calculateS(weights))))
+    def calculateU(self):
+        self.u = 1/(1+(e**(-1*self.calculateS())))
         return self.u
     def calculateFdiff(self):
         self.fDiff = self.u * (1-self.u)
@@ -51,6 +51,14 @@ class outputNode(node):
         self.delta = (realOut - self.u + penalty)*self.calculateFdiff()
         return self.delta
     
+    def calculateS(self):
+        self.s = 0
+        for i in range(n+1,len(nodes)+1):
+            if i == 0:
+                self.s += weights[(0,self.id)]   
+            elif (i,self.id) in weights:
+                self.s += weights[(i,self.id)] * nodes[i-1].getU()
+        return self.s
 
 class inputNode(node):
     def __init__(self,id):
@@ -175,7 +183,7 @@ def mainLoop(epochs,momentum,BD,AN,WD,DataSet):
         if AN:
             p = annealing(y,epochs)
 
-        print(f"{y}/{epochs}")
+        print(mse)
         
 
 def forwardPass(DataSet,x):
@@ -187,7 +195,7 @@ def forwardPass(DataSet,x):
     #Forward pass
 
     for i in range(5, len(nodes)):
-        nodes[i].calculateU(weights)
+        nodes[i].calculateU()
 
 
 def boldDriver(mse,prev,p):
@@ -280,7 +288,11 @@ def variation():
     # print(testingANN.getWeights())
 
     activation(5) 
-    mainLoop(1000,0,0,0,0,trainingSet)
+    mainLoop(1,0,0,0,0,trainingSet)
+    for i in range(5000):
+        for j in range(len(trainingSet)):
+            forwardPass(trainingSet,j)
+    print(weights)
 
 
 
