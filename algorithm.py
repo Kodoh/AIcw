@@ -1,5 +1,11 @@
 import preProcessor
 import random
+import json
+import math
+import ast
+import time
+import numpy as np
+import matplotlib.pyplot as plt
 from math import e
 trainingSet = preProcessor.training
 validationSet = preProcessor.validation
@@ -7,7 +13,7 @@ testingSet = preProcessor.test
 minMaxValuesTraining = preProcessor.minMaxValuesTraining
 minMaxValuesTesting = preProcessor.minMaxValuesTesting
 
-
+#base - hidden node object
 class node: 
     def __init__(self,id):
         self.id = id
@@ -21,22 +27,19 @@ class node:
         return self.id
     def getfDiff(self):
         return self.fDiff
-    def calculateS(self):
-        self.s = 0
-        for i in range(1,n+1): 
-            self.s += weights[(i,self.id)] * nodes[i-1].getU()
-        self.s += weights[(0,self.id)]
-        return self.s
     def getDelta(self):
         return self.delta
     def calculateU(self):
-        self.u = 1/(1+(e**(-1*self.calculateS())))
+        self.s = 0
+        for i in range(1,N+1): 
+            self.s += weights[(i,self.id)] * nodes[i-1].getU()
+        self.s += weights[(0,self.id)]
+        self.u = 1/(1+(e**(-1*self.s)))
         return self.u
     def calculateFdiff(self):
         self.fDiff = self.u * (1-self.u)
         return self.fDiff
-
-    def calculateDelta(self,weights):
+    def calculateDelta(self):
         deltaOut = nodes[len(nodes)-1].getDelta()
         wiO = weights[(self.id,len(nodes))]
         self.delta = wiO*deltaOut*self.calculateFdiff()
@@ -48,13 +51,13 @@ class outputNode(node):
     def calculateDelta(self,realOut,penalty):
         self.delta = (realOut - self.u + penalty)*self.calculateFdiff()
         return self.delta
-    
-    def calculateS(self):
+    def calculateU(self):
         self.s = 0
-        for i in range(n+1,len(nodes)):
+        for i in range(N+1,len(nodes)):  
             self.s += weights[(i,self.id)] * nodes[i-1].getU()
-        self.s += weights[0,self.id]        
-        return self.s
+        self.s += weights[0,self.id]     
+        self.u = 1/(1+(e**(-1*self.s)))   
+        return self.u
 
 class inputNode(node):
     def __init__(self,id):
@@ -62,39 +65,10 @@ class inputNode(node):
     def setInput(self,newInput):
         self.u = newInput
 
-
-class ANN():
-    def __init__(self,hidden,epochs,momentum,boldDriver,annealing,WD,MSE,weights):
-        self.hidden = hidden
-        self.epochs = epochs
-        self.momentum = momentum
-        self.boldDriver = boldDriver
-        self.annealing = annealing
-        self.WD = WD
-        self.MSE = MSE
-        self.weights = weights
-
-    def getHidden(self):
-        return self.hidden
-    def getEpochs(self):
-        return self.epochs
-    def getMomentum(self):
-        return self.momentum
-    def getBoldDriver(self):
-        return self.boldDriver
-    def getAnnealing(self):
-        return self.annealing
-    def getWD(self):
-        return self.WD
-    def getMSE(self):
-        return self.MSE
-    def getWeights(self):
-        return self.weights
-
-
 weights = {}
 nodes =  []
-n = 5
+N = 5
+lowest = float('inf')
 
 def deStandardise(Sinput,minMax):
     deStandardisedOutput = ((Sinput - 0.1)/0.8)*(minMax[1]-minMax[0]) + minMax[0]
@@ -103,96 +77,101 @@ def deStandardise(Sinput,minMax):
 
 
 def activation (hiddenLayerNodes):
-    nodeNum = hiddenLayerNodes + n + 1
-    outputIndex = hiddenLayerNodes+n
-    for i in range(nodeNum-len(nodes)):
+    nodeNum = hiddenLayerNodes + N + 1      #Total number of nodes in ANN
+    outputIndex = hiddenLayerNodes+N        #Index in nodes[] of output node
+    nodes.clear()                           #So when a new ANN is ran old nodes are not held in the array
+
+    #Init for nodes[]
+    for i in range(nodeNum):
         nodes.append(None)
 
-
-    for i in range(n):
+    #Create objects to put in nodes[]
+    for i in range(N):
         IN = inputNode(i+1)
         nodes[i] = IN
     
-    for i in range(n,outputIndex):
+    #Create objects for hidden layer
+    for i in range(N,outputIndex):
         hiddenNode = node(i+1)
         nodes[i] = hiddenNode
 
+    #Create object for output node
     output = outputNode(nodeNum)
     nodes[outputIndex] = output
 
-    for i in range(1,n+1):
-        for j in range(n+1,len(nodes)):
-            weights[(i,j)] = random.uniform(-2/n, 2/n)
+    weights.clear()                 #So when a new ANN is ran old weights are not held in the dictionary
+    #Weights - input --> hidden
+    for i in range(1,N+1):
+        for j in range(N+1,len(nodes)):
+            weights[(i,j)] = random.uniform(-2/N, 2/N)
 
     #biases
-    for i in range(n+1,len(nodes)+1):
-        weights[(0,i)] = random.uniform(-2/n, 2/n)
+    for i in range(N+1,len(nodes)+1):
+        weights[(0,i)] = random.uniform(-2/N, 2/N)
 
-    for i in range(n+1,len(nodes)+1):
+    #weights - hidden --> output
+    for i in range(N+1,len(nodes)+1):
         if (i != len(nodes)):
-            weights[(i,len(nodes))] = random.uniform(-2/n, 2/n)
-    print(weights)
+            weights[(i,len(nodes))] = random.uniform(-2/N, 2/N)
 
-def activationTesting(hiddenLayerNodes):
-    nodeNum = hiddenLayerNodes + n + 1
-    outputIndex = hiddenLayerNodes+n
-    for i in range(nodeNum-len(nodes)):
+def activationTesting(hiddenNodes):             #activation for testing set (dont need to set weights)
+    nodeNum = hiddenNodes + N + 1             
+    outputIndex = hiddenNodes +N
+    nodes.clear()
+    for i in range(nodeNum):
         nodes.append(None)
+    
+    for i in range(N):
+        IN = inputNode(i+1)
+        nodes[i] = IN
 
-    for i in range(n,outputIndex):
+    for i in range(N,outputIndex):
         hiddenNode = node(i+1)
         nodes[i] = hiddenNode
     output = outputNode(nodeNum)
     nodes[outputIndex] = output
     
 
-xData = []
 def mainLoop(epochs,momentum,BD,AN,WD,DataSet):
-    p = 0.1 
+    p = 0.1                 #Learning rate
     omega = 0
     mse = 0
     for y in range(epochs):
         regulationParam = 1/(p*y+1)
-        global yData
-        yData = []
-        mseSum = 0
         prev = mse
+        mseSum = 0
         for x in range(len(DataSet)):          
 
-            realOut = DataSet[x][6]
+            realOut = DataSet[x][6]             # Actual predictand
 
-            if WD:
-                omega = weightDepth()
+            if WD:                      
+                omega = weightDepth()               #Weight depth
 
-            forwardPass(DataSet,x)
+            forwardPass(DataSet,x)                  
 
-            nodes[len(nodes)-1].calculateDelta(realOut,regulationParam*omega)
+            nodes[len(nodes)-1].calculateDelta(realOut,regulationParam*omega)           #For output node get delta
 
-            backPropogate(momentum,p)
+            backwardPass(momentum,p)                                                
 
             mseSum += (deStandardise(realOut,minMaxValuesTraining[len(minMaxValuesTraining)-1])-deStandardise(nodes[len(nodes)-1].getU(),minMaxValuesTraining[len(minMaxValuesTraining)-1]))**2 
-
+            
         mse = mseSum/len(DataSet)
         if BD:
-            p = boldDriver(mse,prev,p)
+            p = boldDriver(mse,prev,p)          #Bold Driver
 
         if AN:
-            p = annealing(y,epochs)
+            p = annealing(y,epochs)            #Annealing
 
-        print(mse)
-        
-
-def forwardPass(DataSet,x):
+def forwardPass(DataSet,record):
     #INITIALISE
 
-    for i in range(1,len(DataSet[x])-1):
-        nodes[i-1].setInput(DataSet[x][i])
+    for i in range(1,len(DataSet[record])-1):
+        nodes[i-1].setInput(DataSet[record][i])
                     
     #Forward pass
 
     for i in range(5, len(nodes)):
         nodes[i].calculateU()
-
 
 def boldDriver(mse,prev,p):
     if (mse - prev) > prev * 0.01:
@@ -212,133 +191,123 @@ def weightDepth():
     return omega
 
 
-def annealing(y,epochs):
+def annealing(current,epochs):
     startLR = 0.1 
     endLR = 0.01
-    return endLR + (startLR-endLR)*(1-(1/(1+e**(10-((20*y)/epochs)))))
+    return endLR + (startLR-endLR)*(1-(1/(1+e**(10-((20*current)/epochs)))))
 
-def backPropogate(momentum,p):
-    n = 5
-    for i in range(n,len(nodes) -1):
-        nodes[i].calculateDelta(weights)
+def backwardPass(momentum,p):
+    N = 5
+    for i in range(N,len(nodes) -1):                #Get delta for hidden nodes
+        nodes[i].calculateDelta()
 
     for i in weights:
-        deltaValue = nodes[i[1]-1].getDelta()
+        deltaValue = nodes[i[1]-1].getDelta()                  #Calculate new weights
         uValue = 1 if i[0] == 0 else nodes[i[0]-1].getU()
     
         if momentum:
-            a = 0.9
             prev = weights[i]
             weights[i] = weights[i] + p * deltaValue * uValue
             diff = weights[i] - prev
+            a = 0.9
             weights[i] = prev + p * deltaValue * uValue + a * diff
     
         else:
             weights[i] = weights[i] + p * deltaValue * uValue
 
-
-def runValidation():
-    mse = 0
+def runValidation():            #Run ANN on validation set
+    rmse = 0
     for i in range(len(validationSet)):
         realOut = validationSet[i][6]
         forwardPass(validationSet,i)
-        print(str(realOut) + ' ' + str(nodes[len(nodes)-1].getU()))
-        mse += (deStandardise(realOut,minMaxValuesTesting[len(minMaxValuesTesting)-1])-deStandardise(nodes[len(nodes)-1].getU(),minMaxValuesTesting[len(minMaxValuesTesting)-1]))**2 
-    return (mse/len(validationSet))
+        rmse += (deStandardise(realOut,minMaxValuesTesting[len(minMaxValuesTesting)-1])-deStandardise(nodes[len(nodes)-1].getU(),minMaxValuesTesting[len(minMaxValuesTesting)-1]))**2 
+    return (math.sqrt(rmse/len(validationSet)))
 
 
-def runTesting():
-    mse = 0
+def runTesting():           #Run ANN on Testing set
+    xData = []
+    yData = []
+    mseSum = 0
+    meanOb = 0
+    realMeanDiffSum  = 0
+    msreSum = 0
+    CE = 1
+    for i in testingSet:
+        meanOb += i[6]
     for i in range(len(testingSet)):
-        realOut = testingSet[i][6]
+        minMaxPredictand = minMaxValuesTesting[len(minMaxValuesTraining)-1]
+        realOut = deStandardise(testingSet[i][6],minMaxPredictand)
+        realMeanDiffSum += (realOut - meanOb)**2
+        xData.append(realOut)
         forwardPass(testingSet,i)
-        print(str(realOut) + ' ' + str(nodes[len(nodes)-1].getU()))
-        mse += (deStandardise(realOut)-deStandardise(nodes[len(nodes)-1].getU()))**2 
-    return (mse/len(testingSet))
+        modelled = deStandardise(nodes[len(nodes)-1].getU(),minMaxPredictand)
+        yData.append(modelled)
+        msreSum += (modelled-realOut/realOut)**2
+        mseSum += (realOut-modelled)**2 
+
+    plt.scatter(xData,yData)
+    plt.axline((0, 0), slope=1)
+    plt.ylabel('Modelled')              #Plot graph
+    plt.xlabel('Actual')
+    plt.title('Test ANN vs actual PAN')
+    plt.show()
+    mse = mseSum/len(testingSet)
+    msre = msreSum/len(testingSet)
+    CE -= (mseSum/realMeanDiffSum)
+    rmse = math.sqrt(mse/len(testingSet))
+    print(f"MSE - {mse} MSRE - {msre} CE - {CE} RMSE - {rmse}")
 
 
-def variation():
-    ANNs = []
-    # for i in range(5,20,5):
-    #     for j in range(100,1000,100):
-    #         ANNcreate(i,j,ANNs)
-
-    # lowest = float('inf')
-    # testingANN = None
-    # for i in ANNs:
-    #     if i.getMSE() < lowest:
-    #         lowest = i.getMSE()
-    #         testingANN = i
-
-    # weights = testingANN.getWeights()
-    # print(weights)
-    # activationTesting(testingANN.getHidden(),5)
-    # runTesting()
-    # print(testingANN.getHidden())
-    # print(testingANN.getEpochs())
-    # print(testingANN.getMomentum())
-    # print(testingANN.getBoldDriver())
-    # print(testingANN.getAnnealing())
-    # print(testingANN.getWD())
-    # print(testingANN.getMSE())
-    # print(testingANN.getWeights())
-
-    activation(5) 
-    mainLoop(1,0,0,0,0,trainingSet)
-    for i in range(5000):
-        for j in range(len(trainingSet)):
-            forwardPass(trainingSet,j)
-    print(weights)
-
-
-
-def ANNcreate(i,j,ANNs):
-
-    #NO IMPROVMENT
-    activation(i,5) 
-    mainLoop(j,0,0,0,0,trainingSet)
-    ANNSample = ANN(i,j,0,0,0,0,runValidation(),weights)
-    ANNs.append(ANNSample)
-
-
-    #WD
-    activation(i,5) 
-    mainLoop(j,0,0,0,1,trainingSet)
-    ANNSample = ANN(i,j,0,0,0,1,runValidation(),weights)
-    ANNs.append(ANNSample)
+def setUp():
+    lowest = float('inf')
+    for i in range(100):
+        start_time = time.time()
+        epochs = random.randint(100,1000)
+        hidden = random.randint(N//2,2*N)           #Create ANNs
+        lowest = ANNcreate(hidden,epochs,lowest)
+        print("--- %s seconds ---" % (time.time() - start_time))
+    # Opening JSON file
+    with open('bestANN.json', 'r') as openfile:         #Get best ANN to run on testing
     
-    #AN
-    activation(i,5) 
-    mainLoop(j,0,0,1,0,trainingSet)
-    ANNSample = ANN(i,j,0,0,1,0,runValidation(),weights)
-    ANNs.append(ANNSample)
-
-    #BD
-    activation(i,5) 
-    mainLoop(j,0,1,0,0,trainingSet)
-    ANNSample = ANN(i,j,0,1,0,0,runValidation(),weights)
-    ANNs.append(ANNSample)
-
-    #MM
-    activation(i,5) 
-    mainLoop(j,1,0,0,0,trainingSet)
-    ANNSample = ANN(i,j,1,0,0,0,runValidation(),weights)
-    ANNs.append(ANNSample)
-
-
-
+        # Reading from json file
+        json_object = json.load(openfile)
     
-    #change this value
-    # add momentum
+
+    weights.clear()
+    weights.update(ast.literal_eval(json_object["weights"]))        #Set weights for testing set
+    activationTesting(json_object["hidden"])
+    runTesting()
+
+def ANNcreate(hidden,epochs,low):
+    momentum = random.randint(0, 1)
+    boldDriver = random.randint(0, 1)
+    annealing = random.randint(0, 1)            #Random improvments
+    weight_decay = random.randint(0, 1)         
 
 
-variation()
-# xData = []
-# for i in trainingSet:
-#     xData.append(i[6])
+    activation(hidden) 
+    mainLoop(epochs,momentum,boldDriver,annealing,weight_decay,trainingSet)
 
-# plt.scatter(xData, yData)
-# plt.xlabel('epochs')
-# plt.ylabel('MSE')
-# plt.title('Error ')
-# plt.show()
+    RMSE = runValidation()              #Put ANN with best RMSE in bestANN.json
+    if RMSE < low:
+        ANN = {
+            "hidden" : hidden,
+            "epochs" : epochs,
+            "momentum" : momentum,
+            "boldDriver" : boldDriver,
+            "annealing" : annealing,
+            "WD" : weight_decay,
+            "RMSE" : RMSE,
+            "weights" :  str(weights)
+
+        }
+        json_object = json.dumps(ANN, indent=4)
+        
+        with open("bestANN.json", "w") as outfile:
+            outfile.write(json_object)
+
+        low = RMSE
+        
+    return low
+
+setUp()
